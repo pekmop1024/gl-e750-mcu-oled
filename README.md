@@ -5,7 +5,7 @@ GL.inet GL-E750 MCU OLED script for vanilla OpenWrt
 
 Use at your own risk! Incorrect JSON can make MCU act weird, including shutting down the router, and in combination with running as background task it could lead to bootloops, however, there is always option for booting into OpenWrt failsafe mode and fixing script or removing it from autostart, so no worries :)
 
-## Dependencies:
+## Dependencies
  * **gl-e750-mcu** (https://github.com/gl-inet/GL-E750-MCU-instruction)
  * **3ginfo.sh** from **luci-app-3ginfo-lite** (https://github.com/4IceG/luci-app-3ginfo)
  * **sms_tool** (available from OpenWrt repository)
@@ -16,11 +16,11 @@ Use at your own risk! Incorrect JSON can make MCU act weird, including shutting 
     * interface status will be trunacted to 7 symbols
     * max 4 interfaces supported
 
-## Configuration:
+## Configuration
  * LuCI -> System -> MCU OLED
  * /etc/config/mcu_oled
 
-## Features:
+## Features
  * Clock;
  * Battery status (LuCI -> Overview);
  * Mobile network type;
@@ -33,10 +33,10 @@ Use at your own risk! Incorrect JSON can make MCU act weird, including shutting 
  * Configurable **mwan3** interfaces status
  * VPN icon status
 
-## Supported MCU JSON input:
+## Supported MCU JSON input
  * see https://github.com/gl-inet/GL-E750-MCU-instruction for details
 
-## Example mwan3.user script:
+## Example mwan3.user script
 
 ```
 MWAN3IFNAME0="vpn0"
