@@ -1,0 +1,399 @@
+#!/bin/sh
+#
+# mcu_oled version 1.0 by pekmop1024
+#
+# GL.inet GL-E750 MCU OLED script for vanilla OpenWrt
+#
+# License:
+#  * GPL3 (https://www.gnu.org/licenses/gpl-3.0.en.html)
+#
+# Disclaimer
+#  * use at your own risk!
+#    incorrect JSON can make MCU act weird, including shutting down the router,
+#    and in combination with running it via cron it could lead to bootloops,
+#    however, there is always option for booting into OpenWrt failsafe mode and
+#    fixing script or removing it from cron schedule, so no worries :)
+#
+# Dependencies:
+#  * gl-e750-mcu (https://github.com/gl-inet/GL-E750-MCU-instruction)
+#  * 3ginfo.sh from luci-app-3ginfo-lite (https://github.com/4IceG/luci-app-3ginfo)
+#  * sms_tool (available from OpenWrt repository)
+#  * jq (available from OpenWrt repository)
+#  * mwan3.user script (optional, for mwan3 interfaces status on custom screen)
+#    limitations due to custom message size (64 symbols max) and formatting:
+#     * interface names will be trunacted to 6 symbols
+#     * interface status will be trunacted to 7 symbols
+#     * max 4 interfaces supported
+#
+# Configuration:
+#  * /etc/config/mcu_oled
+#
+# Features:
+#  * clock
+#  * mobile network type
+#  * mobile network signal
+#  * sms indicator
+#  * router lan address
+#  * 2.4G and 5G access point names
+#  * 2.4G and 5G access point keys display (optional)
+#  * wireless clients number
+#  * configurable mwan3 interfaces status
+#  * vpn icon status
+#
+# Supported MCU JSON input:
+#  * see https://github.com/gl-inet/GL-E750-MCU-instruction for details
+#
+# mwan3.user script example:
+#
+#   MWAN3IFNAME0="vpn0"
+#   if [ "${ACTION}" == "connected" ]; then
+#       if [ "${INTERFACE}" == "${MWAN3IFNAME0}" ]; then
+#           echo "online" > /tmp/mwan3_${MWAN3IFNAME0}_status
+#       fi
+#   fi
+#   if [ "${ACTION}" == "disconnected" ]; then
+#       if [ "${INTERFACE}" == "${MWAN3IFNAME0}" ]; then
+#           echo "offline" > /tmp/mwan3_${MWAN3IFNAME0}_status
+#       fi
+#   fi
+
+# script pid file
+PIDFILE="/var/run/mcu_oled.pid"
+
+# temporary file for 3ginfo.sh output
+TEMPFILE="/var/run/mcu_3ginfo.json"
+
+# file for storing mcu status output data
+MCUOUTPUT="/var/run/mcu_status.log"
+
+# refresh frequency in seconds for background mode
+# 60 seconds is recommended, due to clock refresh
+# 0 or empty value will disable background mode
+REFRESH="60"
+
+# display mask for screens number (needed for correct display refresh)
+DISPLAYMASK="1f"
+
+# VPN status icon initial state (updated dynamically based on IFLIST)
+VPN="disconnected"
+
+# read mcu status from serial port
+MCUSTATUS="$(/sbin/uci get mcu_oled.global.mcustatus 2>/dev/null)"
+if [[ "${MCUSTATUS}" != "1" ]]; then
+    MCUSTATUS=""
+fi
+
+# path to 3ginfo.sh script
+SCRIPT3GINFO="$(/sbin/uci get mcu_oled.global.3ginfo 2>/dev/null)"
+
+# list of mwan3 interfaces (need mwan3.user script to work)
+IFLIST="$(/sbin/uci get mcu_oled.global.iflist 2>/dev/null)"
+
+# device mode
+MODE="$(/sbin/uci get mcu_oled.global.mode 2>/dev/null)"
+
+# hide wireless keys
+HIDEPSK="$(/sbin/uci get mcu_oled.global.hidepsk 2>/dev/null)"
+
+# path to sms_tool 
+SMSTOOL="$(/sbin/uci get mcu_oled.global.smstool 2>/dev/null)"
+
+# serial device for getting sms status via sms_tool
+SMSDEVICE="$(/sbin/uci get mcu_oled.global.smsdevice 2>/dev/null)"
+
+# sms storage for getting sms status via sms_tool
+SMSSTORAGE="$(/sbin/uci get mcu_oled.global.smsstorage 2>/dev/null)"
+
+# 2.4G radio device name
+RADIO2G="$(/sbin/uci get mcu_oled.global.radio2g 2>/dev/null)"
+
+# 5G radio device name
+RADIO5G="$(/sbin/uci get mcu_oled.global.radio5g 2>/dev/null)"
+
+# 2.4G interface name
+WIFI2GIFNAME="$(/sbin/uci get wireless.${RADIO2G}.ifname 2>/dev/null)"
+
+# 5G interface name
+WIFI5GIFNAME="$(/sbin/uci get wireless.${RADIO5G}.ifname 2>/dev/null)"
+
+createpidfile() {
+if [[ -f "${1}" ]]; then
+    PID=$(/bin/cat "${1}")
+    PIDSEARCH=$(/bin/ps | /bin/grep ${PID} | /bin/grep -v grep 2>/dev/null)
+    if [[ ! -z "${PIDSEARCH}" ]]; then
+        logger -p daemon.err -t "mcu_oled" "another mcu_oled instance already running"
+        exit 1
+    else
+        echo $$ > "${1}"
+        if [[ $? -ne 0 ]]; then
+            logger -p daemon.err -t "mcu_oled" "could not create pid file"
+            exit 1
+        fi
+    fi
+else
+    echo $$ > "${1}"
+    if [[ $? -ne 0 ]]; then
+        logger -p daemon.err -t "mcu_oled" "could not create pid file"
+        exit 1
+    fi
+fi
+}
+
+getwifistatus() {
+if [[ ! -z "${RADIO2G}" ]]; then
+    WIFI2GSTATUS="$(/sbin/uci get wireless.${RADIO2G}.disabled 2>/dev/null)"
+    if [[ -z "${WIFI2GSTATUS}" ]]; then
+        WIFI2GSTATUS="1"
+    else
+        WIFI2GSTATUS="0"
+    fi
+fi
+if [[ ! -z "${RADIO5G}" ]]; then
+    WIFI5GSTATUS="$(/sbin/uci get wireless.${RADIO5G}.disabled 2>/dev/null)"
+    if [[ -z "${WIFI5GSTATUS}" ]]; then
+        WIFI5GSTATUS="1"
+    else
+        WIFI2GSTATUS="0"
+    fi
+fi
+}
+
+detectnetworktype() {
+if [[ ${1} -gt 0 ]]; then MODEMSTATUS="modem"; else MODEMSTATUS=""; fi
+case ${2} in
+    LTE)
+        MODEMFREQ="4G"
+    ;;
+    UMTS)
+        MODEMFREQ="3G"
+    ;;
+    EDGE)
+        MODEMFREQ="2G"
+    ;;
+    *)
+        MODEMFREQ=""
+esac
+}
+
+calculatesignal() {
+if [[ ${1} -lt 21 ]]; then
+    SIGNAL="0"
+elif [[ ${1} -lt 41 ]] && [[ ${1} -gt 20 ]]; then
+    SIGNAL="1"
+elif [[ ${1} -lt 61 ]] && [[ ${1} -gt 40 ]]; then
+    SIGNAL="2"
+elif [[ ${1} -lt 81 ]] && [[ ${1} -gt 60 ]]; then
+    SIGNAL="3"
+elif [[ ${1} -gt 80 ]]; then
+    SIGNAL="4"
+else
+    SIGNAL="0"
+fi
+}
+
+collectdata() {
+${1} 2>/dev/null > "${2}"
+LANIP="$(/sbin/uci get network.lan.ipaddr 2>/dev/null)"
+WIFI2G="$(/sbin/uci get wireless.${RADIO2G}.ssid 2>/dev/null)"
+WIFI5G="$(/sbin/uci get wireless.${RADIO5G}.ssid 2>/dev/null)"
+if [[ "${HIDEPSK}" == "0" ]]; then
+    WIFI2GPSK="$(/sbin/uci get wireless.${RADIO2G}.key 2>/dev/null)"
+    WIFI5GPSK="$(/sbin/uci get wireless.${RADIO5G}.key 2>/dev/null)"
+else
+    WIFI2GPSK="hidden"
+    WIFI5GPSK="hidden"
+fi
+WIFI2GCLIENTS="$(/usr/sbin/iw ${WIFI5GIFNAME} station dump | /bin/grep -c Station)"
+WIFI5GCLIENTS="$(/usr/sbin/iw ${WIFI5GIFNAME} station dump | /bin/grep -c Station)"
+WIFICLIENTS=$((WIFI2GCLIENTS+=WIFI5GCLIENTS))
+CLOCK=$(/bin/date +%H:%M)
+if [[ -e "${2}" ]]; then
+    CARRIER="$(/usr/bin/jq -r '.operator_name' ${2})"
+    MODEMUPTIME="$(/usr/bin/jq -r '.conn_time_sec' ${2})"
+    MODEMMODE="$(/usr/bin/jq -r '.mode' ${2})"
+    PERCENTSIGNAL="$(/usr/bin/jq -r '.signal' ${2})"
+    if [[ ! -z "${SMSTOOL}" ]] && [[ ! -z "${SMSDEVICE}" ]] && [[ ! -z "${SMSSTORAGE}" ]]; then
+        SMSNUMBER="$(${SMSTOOL} -d ${SMSDEVICE} -s ${SMSSTORAGE} status | /usr/bin/awk '{gsub(",",""); print $5}')"
+    fi
+    detectnetworktype "${MODEMUPTIME}" "${MODEMMODE}"
+    calculatesignal "${PERCENTSIGNAL}"
+    /bin/rm "${2}"
+fi
+if [[ -e "/dev/sda" ]]; then
+    SDCARD="1"
+else
+    SDCARD="0"
+fi
+getwifistatus
+}
+
+getifstates() {
+SPACE=" "
+IFSTATES=""
+ITEM=0
+for IFNAME in $1; do
+    ITEM=$((${ITEM}+1))
+    if [[ ${ITEM} -gt 4 ]]; then
+        break
+    fi
+    if [[ -e "/tmp/mwan3_${IFNAME}_status" ]]; then
+        IFSTATE=$(cat /tmp/mwan3_${IFNAME}_status)
+        if [[ "${IFSTATE}" == "online" ]]; then
+            VPN="connected"
+        fi
+        while [[ ${#IFSTATE} -lt 7 ]]; do
+            IFSTATE="${IFSTATE}${SPACE}"
+        done
+    else
+        IFSTATE="unknown"
+    fi
+    if [[ ${#IFNAME} -gt 6 ]]; then
+        IFNAME="${IFNAME:0:6}"
+    else
+        while [[ ${#IFNAME} -lt 6 ]]; do
+            IFNAME="${SPACE}${IFNAME}"
+        done
+    fi
+    IFSTATES="${IFSTATES}${IFNAME}:${SPACE}${IFSTATE}${SPACE}"
+done
+IFSTATES=$(echo "${IFSTATES}" | /bin/sed -e 's/[[:blank:]]\+$//')
+}
+
+preparejson() {
+MCUMSG="{ "
+if [[ ! -z "${WIFI5G}" ]]; then
+    MCUMSG="${MCUMSG}\"ssid_5g\": \"${WIFI5G}\", \"up_5g\": \"${WIFI5GSTATUS}\", \"key_5g\": \"${WIFI5GPSK}\", "
+fi
+if [[ ! -z "${WIFI2G}" ]]; then
+    MCUMSG="${MCUMSG}\"ssid\": \"${WIFI2G}\", \"up\": \"${WIFI2GSTATUS}\", \"key\": \"${WIFI2GPSK}\", "
+fi
+if [[ ! -z "${MODE}" ]]; then
+    MCUMSG="${MCUMSG}\"work_mode\": \"${MODE}\", "
+fi
+if [[ ! -z "${LANIP}" ]]; then
+    MCUMSG="${MCUMSG}\"lan_ip\": \"${LANIP}\", "
+fi
+if [[ ! -z "${CARRIER}" ]]; then
+    MCUMSG="${MCUMSG}\"carrier\": \"${CARRIER:0:16}\", "
+fi
+if [[ ! -z "${MODEMSTATUS}" ]]; then
+    MCUMSG="${MCUMSG}\"method_nw\": \"${MODEMSTATUS}\", \"modem_mode\": \"${MODEMFREQ}\", "
+fi
+if [[ ! -z "${WIFICLIENTS}" ]]; then
+    MCUMSG="${MCUMSG}\"clients\": \"${WIFICLIENTS}\", "
+fi
+if [[ ! -z "${SIGNAL}" ]]; then
+    MCUMSG="${MCUMSG}\"signal\": \"${SIGNAL}\", "
+fi
+if [[ ! -z "${SMSNUMBER}" ]]; then
+    MCUMSG="${MCUMSG}\"sms\": \"${SMSNUMBER}\", "
+fi
+if [[ ! -z "${SDCARD}" ]]; then
+    MCUMSG="${MCUMSG}\"disk\": \"${SDCARD}\", "
+fi
+if [[ ! -z "${VPN}" ]]; then
+    MCUMSG="${MCUMSG}\"vpn_status\": \"${VPN}\", "
+fi
+if [[ ! -z "${CLOCK}" ]]; then
+    MCUMSG="${MCUMSG}\"clock\": \"${CLOCK}\", "
+fi
+if [[ "${CUSTOM}" == "1" ]]; then
+    MCUMSG="${MCUMSG}\"custom_en\": \"${CUSTOM}\", \"content\": \"${CUSTOMCONTENT}\", "
+fi
+if [[ ! -z "${DISPLAYMASK}" ]]; then
+    RESETMCUMSG="${MCUMSG}"
+    MCUMSG="${MCUMSG}\"display_mask\": \"${DISPLAYMASK}\", "
+else
+    RESETMCUMSG="${MCUMSG}\"display_mask\": \"1f\", "
+fi
+if [[ ! -z "${MCUSTATUS}" ]]; then
+    MCUMSG="${MCUMSG}\"mcu_status\": \"${MCUSTATUS}\", "
+fi
+if [[ "${MCUMSG:(-2)}" == ", " ]]; then
+    MCUMSG="${MCUMSG:0:(-2)} }"
+fi
+if [[ "${RESETMCUMSG:(-2)}" == ", " ]]; then
+    RESETMCUMSG="${RESETMCUMSG:0:(-2)} }"
+fi
+}
+
+postjson() {
+echo "${RESETMCUMSG}" > /dev/ttyS0
+sleep 1s
+echo "${1}" > /dev/ttyS0
+if [[ "${2}" == "1" ]]; then
+    MCUDATA=""
+    for retry in {1..5}; do
+        MCUDATA=$(/usr/bin/socat stdio /dev/ttyS0)
+        if [[ ${#MCUDATA} -gt 0 ]]; then
+            break
+        fi
+        sleep 1s
+    done
+    if [[ "${MCUDATA:0:4}" == "{OK}" ]]; then
+        echo "${MCUDATA}" > "${3}"
+    fi
+fi
+}
+
+stop_daemon() {
+logger -p daemon.info -t "mcu_oled" "stopping mcu_oled background process"
+if [[ -f "${PIDFILE}" ]]; then
+    /bin/rm ${PIDFILE}
+fi
+exit 0
+}
+
+wait_for_minute_begin() {
+while [[ $(/bin/date +%S) -gt 5 ]]; do
+    /bin/sleep 1s
+done
+}
+
+main() {
+createpidfile "${PIDFILE}"
+collectdata "${SCRIPT3GINFO}" "${TEMPFILE}"
+if [[ -z "${IFLIST}" ]]; then
+    CUSTOM="0"
+else
+    getifstates "${IFLIST}"
+    if [[ ${#IFSTATES} -lt 64 ]]; then
+        CUSTOM="1"
+        CUSTOMCONTENT="${IFSTATES}"
+    elif [[ ${#IFSTATES} -gt 0 ]] && [[ ${#IFSTATES} -gt 64 ]]; then
+        CUSTOM="1"
+        CUSTOMCONTENT="ERROR!!! Message too long (should be 64 symbols or less)"
+    else
+        CUSTOM="0"
+    fi
+fi
+preparejson
+if [[ "${1}" == "--debug" ]]; then
+    echo "${MCUMSG}" | /usr/bin/jq
+else
+    postjson "${MCUMSG}" "${MCUSTATUS}" "${MCUOUTPUT}"
+fi
+/bin/rm "${PIDFILE}"
+}
+
+if [[ ${REFRESH} -gt 0 ]] && [[ "${1}" != "--once" ]]; then
+    trap stop_daemon SIGKILL SIGTERM SIGINT
+    if [[ "${1}" == "--debug" ]]; then
+        echo "running mcu_oled in one-time debug mode (dry run)"
+    else
+        logger -p daemon.info -t "mcu_oled" "running mcu_oled in background mode"
+    fi
+    while true; do
+        if [[ "${1}" != "--debug" ]]; then
+            wait_for_minute_begin
+        fi
+        main "${1}"
+        if [[ "${1}" == "--debug" ]]; then
+            break
+        fi
+        /bin/sleep ${REFRESH}
+    done
+else
+    echo "running mcu_oled in one-time mode"
+    main "${1}"
+fi

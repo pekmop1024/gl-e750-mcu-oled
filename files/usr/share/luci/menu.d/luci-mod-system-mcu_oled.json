@@ -1,0 +1,13 @@
+{
+	"admin/system/mcu_oled": {
+		"title": "MCU OLED",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "system/mcu_oled"
+		},
+		"depends": {
+			"acl": [ "luci-mod-system-mcu_oled" ]
+		}
+	}
+}

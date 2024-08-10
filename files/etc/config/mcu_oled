@@ -1,0 +1,12 @@
+
+config mcu_oled 'global'
+	option mode 'Router'
+	option mcustatus '1'
+	option hidepsk '0'
+	option 3ginfo '/usr/share/3ginfo-lite/3ginfo.sh'
+	option smstool '/usr/bin/sms_tool'
+	option smsdevice '/dev/ttyUSB3'
+	option smsstorage 'ME'
+	option iflist 'vpn0 vpn1 vpn2 vpn3'
+	option radio2g 'default_radio1'
+	option radio5g 'default_radio0'

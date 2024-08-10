@@ -1,0 +1,25 @@
+{
+	"luci-mod-system-mcu_oled": {
+		"description": "Grant access to MCU OLED configuration",
+		"read": {
+			"file": {
+				"/etc/config/mcu_oled": [ "read" ],
+			},
+			"ubus": {
+				"file": [ "read" ]
+			},
+			"uci": [ "mcu_oled" ]
+		},
+		"write": {
+			"file": {
+				"/etc/config/mcu_oled": [ "write" ]
+			},
+			"ubus": {
+				"file": [ "write" ],
+				"luci": [ "setInitAction" ]
+			},
+			"uci": [ "mcu_oled" ]
+		}
+	}
+}
+

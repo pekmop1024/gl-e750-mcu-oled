@@ -1,0 +1,36 @@
+#!/bin/sh /etc/rc.common
+#
+# mcu_oled version 1.0 by pekmop1024
+#
+# GL.inet GL-E750 MCU OLED script for vanilla OpenWrt
+#
+# License:
+#  * GPL3 (https://www.gnu.org/licenses/gpl-3.0.en.html)
+
+START=21
+STOP=9
+USE_PROCD=1
+
+start_service() {
+    if [[ ! -e /etc/config/mcu_oled ]]; then
+        logger -p daemon.error -t "mcu_oled" "missing config /etc/config/mcu_oled!"
+        return 1
+    fi
+    config_load 'mcu_oled'
+    logger -p daemon.notice -t "mcu_oled" "starting mcu_oled ..."
+    procd_open_instance
+    procd_set_param command /usr/bin/mcu_oled
+    procd_set_param file /etc/config/mcu_oled
+    procd_set_param respawn
+    procd_close_instance
+}
+
+service_triggers() {
+    procd_add_reload_trigger "mcu_oled"
+}
+
+reload_service() {
+    logger -p daemon.notice -t "mcu_oled" "restarting mcu_oled ..."
+    stop
+    start
+}
