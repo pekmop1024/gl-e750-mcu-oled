@@ -204,7 +204,7 @@ else
     WIFI2GPSK="hidden"
     WIFI5GPSK="hidden"
 fi
-WIFI2GCLIENTS="$(/usr/sbin/iw ${WIFI5GIFNAME} station dump | /bin/grep -c Station)"
+WIFI2GCLIENTS="$(/usr/sbin/iw ${WIFI2GIFNAME} station dump | /bin/grep -c Station)"
 WIFI5GCLIENTS="$(/usr/sbin/iw ${WIFI5GIFNAME} station dump | /bin/grep -c Station)"
 WIFICLIENTS=$((WIFI2GCLIENTS+=WIFI5GCLIENTS))
 CLOCK=$(/bin/date +%H:%M)
