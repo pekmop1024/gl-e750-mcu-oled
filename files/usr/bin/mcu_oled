@@ -10,15 +10,16 @@
 # Disclaimer
 #  * use at your own risk!
 #    incorrect JSON can make MCU act weird, including shutting down the router,
-#    and in combination with running it via cron it could lead to bootloops,
+#    and in combination with running it in background could lead to bootloops,
 #    however, there is always option for booting into OpenWrt failsafe mode and
-#    fixing script or removing it from cron schedule, so no worries :)
+#    fixing script or disabling autostart, so no worries :)
 #
 # Dependencies:
 #  * gl-e750-mcu (https://github.com/gl-inet/GL-E750-MCU-instruction)
 #  * 3ginfo.sh from luci-app-3ginfo-lite (https://github.com/4IceG/luci-app-3ginfo)
 #  * sms_tool (available from OpenWrt repository)
 #  * jq (available from OpenWrt repository)
+#  * socat (available from OpenWrt repository)
 #  * mwan3.user script (optional, for mwan3 interfaces status on custom screen)
 #    limitations due to custom message size (64 symbols max) and formatting:
 #     * interface names will be trunacted to 6 symbols

@@ -13,6 +13,7 @@ Use at your own risk! Incorrect JSON can make MCU act weird, including shutting 
  * **3ginfo.sh** from **luci-app-3ginfo-lite** (https://github.com/4IceG/luci-app-3ginfo)
  * **sms_tool** (available from OpenWrt repository)
  * **jq** (available from OpenWrt repository)
+ * **socat** (available from OpenWrt repository)
  * **mwan3.user** script (optional, for mwan3 interfaces status on custom screen)
    limitations due to custom message size (64 symbols max) and formatting:
     * interface names will be trunacted to 6 symbols
