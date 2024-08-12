@@ -162,13 +162,22 @@ fi
 detectnetworktype() {
 if [[ ${1} -gt 0 ]]; then MODEMSTATUS="modem"; else MODEMSTATUS=""; fi
 case ${2} in
-    LTE)
+    *"LTE"*)
         MODEMFREQ="4G"
     ;;
-    UMTS)
+    *"UMTS"*)
         MODEMFREQ="3G"
     ;;
-    EDGE)
+    *"HSPA"*)
+        MODEMFREQ="3G"
+    ;;
+    *"HSDPA"*)
+        MODEMFREQ="3G"
+    ;;
+    *"EDGE"*)
+        MODEMFREQ="2G"
+    ;;
+    *"GPRS"*)
         MODEMFREQ="2G"
     ;;
     *)
