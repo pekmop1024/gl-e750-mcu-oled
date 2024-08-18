@@ -8,8 +8,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=gl-e750-mcu-oled
-PKG_VERSION:=1.0
-PKG_RELEASE:=4
+PKG_VERSION:=1.1
+PKG_RELEASE:=1
 PKG_ARCH=:all
 PKG_LICENSE:=GPL-3.0
 
@@ -19,7 +19,7 @@ define Package/gl-e750-mcu-oled/Default
 	SECTION:=base
 	CATEGORY:=gl-inet
 	TITLE:=GL.inet GL-E750 MCU OLED script for vanilla OpenWrt
-	DEPENDS:=+libjson-c +libpthread +libuci +libcurl +libblobmsg-json +libiwinfo +libubox +libubus +libuuid +jq +gl-e750-mcu +sms-tool +luci-app-3ginfo-lite +socat
+	DEPENDS:=+libjson-c +libpthread +libuci +libcurl +libblobmsg-json +libiwinfo +libubox +libubus +libuuid +jq +coreutils-stty +sms-tool +luci-app-3ginfo-lite +socat
 endef
 
 Package/gl-e750-mcu-oled = $(Package/gl-e750-mcu-oled/Default)

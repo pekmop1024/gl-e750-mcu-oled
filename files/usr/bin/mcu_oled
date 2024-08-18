@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# mcu_oled version 1.0 by pekmop1024
+# mcu_oled version 1.1 by pekmop1024
 #
 # GL.inet GL-E750 MCU OLED script for vanilla OpenWrt
 #
@@ -15,10 +15,10 @@
 #    fixing script or disabling autostart, so no worries :)
 #
 # Dependencies:
-#  * gl-e750-mcu (https://github.com/gl-inet/GL-E750-MCU-instruction)
 #  * 3ginfo.sh from luci-app-3ginfo-lite (https://github.com/4IceG/luci-app-3ginfo)
 #  * sms_tool (available from OpenWrt repository)
 #  * jq (available from OpenWrt repository)
+#  * coreutils-stty (available from OpenWrt repository)
 #  * socat (available from OpenWrt repository)
 #  * mwan3.user script (optional, for mwan3 interfaces status on custom screen)
 #    limitations due to custom message size (64 symbols max) and formatting:
@@ -40,6 +40,7 @@
 #  * wireless clients number
 #  * configurable mwan3 interfaces status
 #  * vpn icon status
+#  * sd card indicator
 #
 # Supported MCU JSON input:
 #  * see https://github.com/gl-inet/GL-E750-MCU-instruction for details
@@ -270,7 +271,7 @@ IFSTATES=$(echo "${IFSTATES}" | /bin/sed -e 's/[[:blank:]]\+$//')
 }
 
 preparejson() {
-MCUMSG="{ "
+MCUMSG="{ \"ps\": \"0\", "
 if [[ ! -z "${WIFI5G}" ]]; then
     MCUMSG="${MCUMSG}\"ssid_5g\": \"${WIFI5G}\", \"up_5g\": \"${WIFI5GSTATUS}\", \"key_5g\": \"${WIFI5GPSK}\", "
 fi
@@ -328,21 +329,45 @@ fi
 }
 
 postjson() {
+if [[ "${DEBUG}" == "true" ]]; then
+    echo "--- BEGIN RESETMCUMSG PAYLOAD ---"
+    echo "${RESETMCUMSG}" | /usr/bin/jq
+    echo "--- END RESETMCUMSG PAYLOAD ---"
+fi
 echo "${RESETMCUMSG}" > /dev/ttyS0
 sleep 1s
 echo "${1}" > /dev/ttyS0
 if [[ "${2}" == "1" ]]; then
     MCUDATA=""
     for retry in {1..5}; do
+        if [[ "${DEBUG}" == "true" ]]; then
+            echo "--- TRYING TO GET MCU RESPONSE... ---"
+        fi
         MCUDATA=$(/usr/bin/socat stdio /dev/ttyS0)
         if [[ ${#MCUDATA} -gt 0 ]]; then
             break
         fi
         sleep 1s
     done
+    if [[ "${DEBUG}" == "true" ]]; then
+        echo "--- FINISHED GETTING MCU RESPONSE ---"
+    fi
     if [[ "${MCUDATA:0:4}" == "{OK}" ]]; then
         echo "${MCUDATA}" > "${3}"
     fi
+fi
+}
+
+init_mcu() {
+if [[ ! -e "/var/run/mcu_init.state" ]] && [[ "${DRYRUN}" != "true" ]]; then
+    echo 1 4 1 7 > /proc/sys/kernel/printk
+    /bin/stty -F /dev/ttyS0 115200 min 0 time 1 ignbrk -brkint -icrnl -imaxbel -opost -olcuc -ocrnl -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke
+    echo "{OK}" > /dev/ttyS0
+    echo "{ \"mcu_status\": \"0\", \"custom_en\": \"1\", \"content\": \" please wait... \", \"display_mask\": \"0\" }" > /dev/ttyS0
+    touch /var/run/mcu_init.state
+    sleep 1s
+elif [[ "${DRYRUN}" == "true" ]]; then
+    echo "would have initialize mcu"
 fi
 }
 
@@ -360,9 +385,7 @@ while [[ $(/bin/date +%S) -gt 5 ]]; do
 done
 }
 
-main() {
-createpidfile "${PIDFILE}"
-collectdata "${SCRIPT3GINFO}" "${TEMPFILE}"
+get_custom_message() {
 if [[ -z "${IFLIST}" ]]; then
     CUSTOM="0"
 else
@@ -377,33 +400,81 @@ else
         CUSTOM="0"
     fi
 fi
+}
+
+main() {
+createpidfile "${PIDFILE}"
+collectdata "${SCRIPT3GINFO}" "${TEMPFILE}"
+get_custom_message
 preparejson
-if [[ "${1}" == "--debug" ]]; then
+if [[ "${DEBUG}" == "true" ]]; then
+    echo "--- BEGIN MCUMSG PAYLOAD ---"
     echo "${MCUMSG}" | /usr/bin/jq
-else
+    echo "--- END MCUMSG PAYLOAD ---"
+fi
+if [[ "${DRYRUN}" != "true" ]]; then
     postjson "${MCUMSG}" "${MCUSTATUS}" "${MCUOUTPUT}"
 fi
 /bin/rm "${PIDFILE}"
 }
 
-if [[ ${REFRESH} -gt 0 ]] && [[ "${1}" != "--once" ]]; then
+usage() {
+cat << EOF
+
+USAGE:
+       $0 [options]
+
+OPTIONS:
+
+       -f      Run in foreground mode
+       -D      Run in dry run mode
+       -d      Print debug output
+       -h      Show this message
+
+EOF
+}
+
+while getopts "fdDh" OPTION; do
+    case $OPTION in
+        d)
+            DEBUG="true"
+            ;;
+        D)
+            DRYRUN="true"
+            ;;
+        f)
+            FOREGROUND="true"
+            ;;
+        h)
+            usage
+            exit 0
+            ;;
+    esac
+done
+
+if [[ ${REFRESH} -gt 0 ]] && [[ "${FOREGROUND}" != "true" ]] && [[ "${DRYRUN}" != "true" ]] && [[ "${DEBUG}" != "true" ]]; then
     trap stop_daemon SIGKILL SIGTERM SIGINT
-    if [[ "${1}" == "--debug" ]]; then
-        echo "running mcu_oled in one-time debug mode (dry run)"
-    else
-        logger -p daemon.info -t "mcu_oled" "running mcu_oled in background mode"
-    fi
+    logger -p daemon.info -t "mcu_oled" "running mcu_oled in background mode"
+    init_mcu
     while true; do
-        if [[ "${1}" != "--debug" ]]; then
+        if [[ "${DRYRUN}" != "true" ]]; then
             wait_for_minute_begin
         fi
-        main "${1}"
-        if [[ "${1}" == "--debug" ]]; then
+        main
+        if [[ "${DRYRUN}" == "true" ]]; then
             break
         fi
         /bin/sleep ${REFRESH}
     done
+elif [[ "${DRYRUN}" == "true" ]] && [[ "${DEBUG}" == "true" ]]; then
+    echo "running mcu_oled in foreground dry run debug mode"
+elif [[ "${DRYRUN}" == "true" ]] && [[ "${DEBUG}" != "true" ]]; then
+    echo "running mcu_oled in foreground dry run mode"
+elif [[ "${DRYRUN}" != "true" ]] && [[ "${DEBUG}" == "true" ]]; then
+    echo "running mcu_oled in foreground real run debug mode"
 else
-    echo "running mcu_oled in one-time mode"
-    main "${1}"
+    echo "running mcu_oled in foreground real run mode"
 fi
+
+init_mcu
+main

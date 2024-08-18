@@ -9,10 +9,10 @@ Use at your own risk! Incorrect JSON can make MCU act weird, including shutting 
  * https://github.com/pekmop1024/openwrt-23.05.4-pekmop1024
 
 ## Dependencies
- * **gl-e750-mcu** (https://github.com/gl-inet/GL-E750-MCU-instruction)
  * **3ginfo.sh** from **luci-app-3ginfo-lite** (https://github.com/4IceG/luci-app-3ginfo)
  * **sms_tool** (available from OpenWrt repository)
  * **jq** (available from OpenWrt repository)
+ * **coreutils-stty** (available from OpenWrt repository)
  * **socat** (available from OpenWrt repository)
  * **mwan3.user** script (optional, for mwan3 interfaces status on custom screen)
    limitations due to custom message size (64 symbols max) and formatting:
@@ -31,11 +31,12 @@ Use at your own risk! Incorrect JSON can make MCU act weird, including shutting 
  * Mobile network signal;
  * SMS indicator;
  * Router LAN address;
- * 2.4G and 5G access point names
- * 2.4G and 5G access point keys display (optional)
- * Wireless clients number
- * Configurable **mwan3** interfaces status
- * VPN icon status
+ * 2.4G and 5G access point names;
+ * 2.4G and 5G access point keys display (optional);
+ * Wireless clients number;
+ * Configurable **mwan3** interfaces status;
+ * VPN icon status;
+ * SD card indicator.
 
 ## Supported MCU JSON input
  * see https://github.com/gl-inet/GL-E750-MCU-instruction for details
