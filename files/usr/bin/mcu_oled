@@ -155,7 +155,7 @@ if [[ ! -z "${RADIO5G}" ]]; then
     if [[ -z "${WIFI5GSTATUS}" ]]; then
         WIFI5GSTATUS="1"
     else
-        WIFI2GSTATUS="0"
+        WIFI5GSTATUS="0"
     fi
 fi
 }
